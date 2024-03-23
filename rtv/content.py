@@ -207,9 +207,74 @@ class Content(object):
         return data
 
     @classmethod
-    def strip_praw_submission(cls, sub: T.PostItem):
+    def strip_praw_submission(cls, sub: T.Post):
         """
         Parse through a submission and return a dict with data ready to be
+        displayed through the terminal.
+
+        Definitions:
+            permalink - URL to the reddit page with submission comments.
+            url_full - URL that the submission points to.
+            url - URL that will be displayed on the subreddit page, may be
+                "selfpost", "x-post submission", "x-post subreddit", or an
+                external link.
+        """
+
+        data = {}
+        data['object'] = sub
+        data['type'] = 'Submission'
+        data['title'] = sub.title
+        data['text'] = sub.text if sub.text else ''
+        data['html'] = ''   # TODO pass the scraped HTML
+        data['created'] = cls.humanize_timestamp(sub.ctime.timestamp())
+        data['created_long'] = cls.humanize_timestamp(sub.ctime.timestamp(), True)
+        data['comments'] = '{0} comments'.format(None) # TODO
+        data['score'] = '{0} pts'.format(sub.votes)
+        data['author'] = sub.author
+        data['permalink'] = f'https://tildes.net/~{sub.group}/{sub.id}/'
+        data['subreddit'] = six.text_type(sub.group)
+        data['flair'] = ' '.join('[{}]'.format(t) for t in sub.tags)
+        data['url_full'] = sub.url
+        data['likes'] = 0 # sub.likes
+        data['gold'] = False
+        data['nsfw'] = False
+        data['stickied'] = False
+        data['hidden'] = False
+        data['xpost_subreddit'] = None
+        data['index'] = None  # This is filled in later by the method caller
+        data['saved'] = False
+        if False: #sub.edited:
+            data['edited'] = '(edit {})'.format(
+                cls.humanize_timestamp(sub.edited))
+            data['edited_long'] = '(edit {})'.format(
+                cls.humanize_timestamp(sub.edited, True))
+        else:
+            data['edited'] = ''
+            data['edited_long'] = ''
+
+        if sub.is_selfpost:
+            data['url'] = 'self.{0}'.format(data['subreddit'])
+            data['url_type'] = 'selfpost'
+        # elif reddit_link.match(sub.url):  # Crossposts
+        #     # Strip the subreddit name from the permalink to avoid having
+        #     # submission.subreddit.url make a separate API call
+        #     url_parts = sub.url.split('/')
+        #     data['xpost_subreddit'] = url_parts[4]
+        #     data['url'] = 'self.{0}'.format(url_parts[4])
+        #     if 'comments' in url_parts:
+        #         data['url_type'] = 'x-post submission'
+        #     else:
+        #         data['url_type'] = 'x-post subreddit'
+        else:
+            data['url'] = sub.url
+            data['url_type'] = 'external'
+
+        return data
+
+    @classmethod
+    def strip_praw_submission_header(cls, sub: T.PostHeader):
+        """
+        Parse through a post header (ie. no self text) and return a dict with data ready to be
         displayed through the terminal.
 
         Definitions:
@@ -231,8 +296,8 @@ class Content(object):
         data['comments'] = '{0} comments'.format(sub.ncomments)
         data['score'] = '{0} pts'.format(sub.votes)
         data['author'] = sub.author
-        data['permalink'] = ''  # TODO
-        data['subreddit'] = six.text_type(sub.grp.name)
+        data['permalink'] = f'https://tildes.net/~{sub.group.name}/{sub.id}/'
+        data['subreddit'] = six.text_type(sub.group.name)
         data['flair'] = ''# TODO '[{0}]'.format(flair.strip(' []')) if flair else ''
         data['url_full'] = sub.url
         data['likes'] = 0 # sub.likes
@@ -435,7 +500,7 @@ class SubmissionContent(Content):
                  order=None, max_comment_cols=120):
 
         submission_data = self.strip_praw_submission(submission)
-        comments = self.flatten_comments(submission.comments)
+        comments = []#self.flatten_comments(submission.comments)
 
         self.indent_size = indent_size
         self.max_indent_level = max_indent_level
@@ -451,20 +516,13 @@ class SubmissionContent(Content):
     @classmethod
     def from_url(cls, reddit, url, loader, indent_size=2, max_indent_level=8,
                  order=None, max_comment_cols=120):
+        try:
+            exp = r'^https?:\/\/(www\.)?tildes\.net\/~(\w+)\/(\w{4})\/'
+            group, id = re.match(exp, url).group(2, 3)
+        except Exception as e:
+            raise SubmissionError
 
-        # Reddit forces SSL
-        url = url.replace('http:', 'https:')
-
-        # Sometimes reddit will return a 403 FORBIDDEN when trying to access an
-        # np link while using OAUTH. Cause is unknown.
-        url = url.replace('https://np.', 'https://www.')
-
-        # Sometimes reddit will return internal links like "context" as
-        # relative URLs.
-        if url.startswith('/'):
-            url = 'https://www.reddit.com' + url
-
-        submission = reddit.get_submission(url, comment_sort=order)
+        submission = T.Post(group, id) #comment_sort=order)
         return cls(submission, loader, indent_size, max_indent_level, order,
                    max_comment_cols)
 
@@ -631,7 +689,7 @@ class SubredditContent(Content):
         while index >= len(self._submission_data):
             try:
                 with self._loader('Loading more submissions'):
-                    submission = next(self._iter)   # Will be a T.PostItem
+                    submission = next(self._iter)   # Will be a T.PostHeader
                 if self._loader.exception:
                     raise IndexError
             except StopIteration:
@@ -639,9 +697,9 @@ class SubredditContent(Content):
             else:
 
                 if hasattr(submission, 'title'):
-                    data = self.strip_praw_submission(submission)
+                    data = self.strip_praw_submission_header(submission)
                 else:
-                    assert False # TODO: Need to implement this for Tildes    
+                    raise NotImplementedError # TODO: Need to implement this for Tildes    
                     # when submission is a saved comment
                     data = self.strip_praw_comment(submission)
 

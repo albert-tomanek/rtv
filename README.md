@@ -1,5 +1,11 @@
 ## A crude Tildes fork of `rtv`
 
+Still contains a lot of reddit code.  
+Do not attempt to:
+ * Comment
+ * Open reddit/tildes links
+ * View users
+
 ---
 
 - [RTV Development is Shutting Down](https://github.com/michael-lazar/rtv/issues/696)
