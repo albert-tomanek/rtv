@@ -122,7 +122,7 @@ class Content(object):
         return retval
 
     @classmethod
-    def strip_praw_comment(cls, comment):
+    def strip_praw_comment(cls, comment: T.Comment):
         """
         Parse through a submission comment and return a dict with data ready to
         be displayed through the terminal.
@@ -131,78 +131,68 @@ class Content(object):
         data = {}
         data['object'] = comment
 
-        if isinstance(comment, praw.objects.MoreComments):
-            data['type'] = 'MoreComments'
-            data['level'] = comment.nested_level
-            data['count'] = comment.count
-            data['body'] = 'More comments'
-            data['hidden'] = True
+        # if isinstance(comment, praw.objects.MoreComments):
+        #     data['type'] = 'MoreComments'
+        #     data['level'] = comment.nested_level
+        #     data['count'] = comment.count
+        #     data['body'] = 'More comments'
+        #     data['hidden'] = True
 
-        elif hasattr(comment, 'nested_level'):
-            author = getattr(comment, 'author', '[deleted]')
-            name = getattr(author, 'name', '[deleted]')
-            sub = getattr(comment, 'submission', '[deleted]')
-            sub_author = getattr(sub, 'author', '[deleted]')
-            sub_name = getattr(sub_author, 'name', '[deleted]')
-            flair = getattr(comment, 'author_flair_text', '')
-            permalink = getattr(comment, 'permalink', None)
-            stickied = getattr(comment, 'stickied', False)
-
+        if hasattr(comment, 'nested_level'):
             data['type'] = 'Comment'
             data['level'] = comment.nested_level
-            data['body'] = comment.body
-            data['html'] = comment.body_html
-            data['created'] = cls.humanize_timestamp(comment.created_utc)
-            data['score'] = '{0} pts'.format(
-                '-' if comment.score_hidden else comment.score)
-            data['author'] = name
-            data['is_author'] = (name == sub_name)
-            data['flair'] = flair
-            data['likes'] = comment.likes
-            data['gold'] = comment.gilded
-            data['permalink'] = permalink
-            data['stickied'] = stickied
+            data['body'] = comment.text
+            data['html'] = None # TODO
+            data['created'] = cls.humanize_timestamp(comment.ctime.timestamp())
+            data['score'] = '{0} pts'.format(comment.votes)
+            data['author'] = comment.author
+            data['is_author'] = comment.is_op
+            data['flair'] = ''
+            data['likes'] = None
+            data['gold'] = comment.is_exemplary
+            data['permalink'] = ''
+            data['stickied'] = False
             data['hidden'] = False
-            data['saved'] = comment.saved
-            if comment.edited:
+            data['saved'] = False
+            if False:
                 data['edited'] = '(edit {})'.format(
                     cls.humanize_timestamp(comment.edited))
             else:
                 data['edited'] = ''
-        else:
-            # Saved comments don't have a nested level and are missing a couple
-            # of fields like ``submission``. As a result, we can only load a
-            # subset of fields to avoid triggering a separate api call to load
-            # the full comment.
-            author = getattr(comment, 'author', '[deleted]')
-            stickied = getattr(comment, 'stickied', False)
-            flair = getattr(comment, 'author_flair_text', '')
+        # else:
+        #     # Saved comments don't have a nested level and are missing a couple
+        #     # of fields like ``submission``. As a result, we can only load a
+        #     # subset of fields to avoid triggering a separate api call to load
+        #     # the full comment.
+        #     author = getattr(comment, 'author', '[deleted]')
+        #     stickied = getattr(comment, 'stickied', False)
+        #     flair = getattr(comment, 'author_flair_text', '')
 
-            data['type'] = 'SavedComment'
-            data['level'] = None
-            data['title'] = '[Comment] {0}'.format(comment.body)
-            data['comments'] = None
-            data['url_full'] = comment._fast_permalink
-            data['url'] = comment._fast_permalink
-            data['permalink'] = comment._fast_permalink
-            data['nsfw'] = comment.over_18
-            data['subreddit'] = six.text_type(comment.subreddit)
-            data['url_type'] = 'selfpost'
-            data['score'] = '{0} pts'.format(
-                '-' if comment.score_hidden else comment.score)
-            data['likes'] = comment.likes
-            data['created'] = cls.humanize_timestamp(comment.created_utc)
-            data['saved'] = comment.saved
-            data['stickied'] = stickied
-            data['gold'] = comment.gilded
-            data['author'] = author
-            data['flair'] = flair
-            data['hidden'] = False
-            if comment.edited:
-                data['edited'] = '(edit {})'.format(
-                    cls.humanize_timestamp(comment.edited))
-            else:
-                data['edited'] = ''
+        #     data['type'] = 'SavedComment'
+        #     data['level'] = None
+        #     data['title'] = '[Comment] {0}'.format(comment.body)
+        #     data['comments'] = None
+        #     data['url_full'] = comment._fast_permalink
+        #     data['url'] = comment._fast_permalink
+        #     data['permalink'] = comment._fast_permalink
+        #     data['nsfw'] = comment.over_18
+        #     data['subreddit'] = six.text_type(comment.subreddit)
+        #     data['url_type'] = 'selfpost'
+        #     data['score'] = '{0} pts'.format(
+        #         '-' if comment.score_hidden else comment.score)
+        #     data['likes'] = comment.likes
+        #     data['created'] = cls.humanize_timestamp(comment.created_utc)
+        #     data['saved'] = comment.saved
+        #     data['stickied'] = stickied
+        #     data['gold'] = comment.gilded
+        #     data['author'] = author
+        #     data['flair'] = flair
+        #     data['hidden'] = False
+        #     if comment.edited:
+        #         data['edited'] = '(edit {})'.format(
+        #             cls.humanize_timestamp(comment.edited))
+        #     else:
+        #         data['edited'] = ''
 
         return data
 
@@ -496,11 +486,11 @@ class SubmissionContent(Content):
     list for repeat access.
     """
 
-    def __init__(self, submission, loader, indent_size=2, max_indent_level=8,
+    def __init__(self, submission: T.Post, loader, indent_size=2, max_indent_level=8,
                  order=None, max_comment_cols=120):
 
         submission_data = self.strip_praw_submission(submission)
-        comments = []#self.flatten_comments(submission.comments)
+        comments = self.flatten_comments(submission.comments)
 
         self.indent_size = indent_size
         self.max_indent_level = max_indent_level
