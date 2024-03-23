@@ -11,6 +11,8 @@ import six
 from bs4 import BeautifulSoup
 from kitchen.text.display import wrap
 
+from .tildes import scraper as T
+
 from . import exceptions
 from .packages import praw
 from .packages.praw.errors import InvalidSubreddit
@@ -205,7 +207,7 @@ class Content(object):
         return data
 
     @classmethod
-    def strip_praw_submission(cls, sub):
+    def strip_praw_submission(cls, sub: T.PostItem):
         """
         Parse through a submission and return a dict with data ready to be
         displayed through the terminal.
@@ -218,36 +220,30 @@ class Content(object):
                 external link.
         """
 
-        reddit_link = re.compile(
-            r'https?://(www\.)?(np\.)?redd(it\.com|\.it)/r/.*')
-        author = getattr(sub, 'author', '[deleted]')
-        name = getattr(author, 'name', '[deleted]')
-        flair = getattr(sub, 'link_flair_text', '')
-
         data = {}
         data['object'] = sub
         data['type'] = 'Submission'
         data['title'] = sub.title
-        data['text'] = sub.selftext
-        data['html'] = sub.selftext_html or ''
-        data['created'] = cls.humanize_timestamp(sub.created_utc)
-        data['created_long'] = cls.humanize_timestamp(sub.created_utc, True)
-        data['comments'] = '{0} comments'.format(sub.num_comments)
-        data['score'] = '{0} pts'.format('-' if sub.hide_score else sub.score)
-        data['author'] = name
-        data['permalink'] = sub.permalink
-        data['subreddit'] = six.text_type(sub.subreddit)
-        data['flair'] = '[{0}]'.format(flair.strip(' []')) if flair else ''
+        data['text'] = ''
+        data['html'] = ''
+        data['created'] = cls.humanize_timestamp(sub.ctime.timestamp())
+        data['created_long'] = cls.humanize_timestamp(sub.ctime.timestamp(), True)
+        data['comments'] = '{0} comments'.format(sub.ncomments)
+        data['score'] = '{0} pts'.format(sub.votes)
+        data['author'] = sub.author
+        data['permalink'] = ''  # TODO
+        data['subreddit'] = six.text_type(sub.grp.name)
+        data['flair'] = ''# TODO '[{0}]'.format(flair.strip(' []')) if flair else ''
         data['url_full'] = sub.url
-        data['likes'] = sub.likes
-        data['gold'] = sub.gilded
-        data['nsfw'] = sub.over_18
-        data['stickied'] = sub.stickied
-        data['hidden'] = sub.hidden
+        data['likes'] = 0 # sub.likes
+        data['gold'] = False
+        data['nsfw'] = False
+        data['stickied'] = False
+        data['hidden'] = False
         data['xpost_subreddit'] = None
         data['index'] = None  # This is filled in later by the method caller
-        data['saved'] = sub.saved
-        if sub.edited:
+        data['saved'] = False
+        if False: #sub.edited:
             data['edited'] = '(edit {})'.format(
                 cls.humanize_timestamp(sub.edited))
             data['edited_long'] = '(edit {})'.format(
@@ -256,19 +252,19 @@ class Content(object):
             data['edited'] = ''
             data['edited_long'] = ''
 
-        if sub.url.split('/r/')[-1] == sub.permalink.split('/r/')[-1]:
+        if sub.is_selfpost:
             data['url'] = 'self.{0}'.format(data['subreddit'])
             data['url_type'] = 'selfpost'
-        elif reddit_link.match(sub.url):
-            # Strip the subreddit name from the permalink to avoid having
-            # submission.subreddit.url make a separate API call
-            url_parts = sub.url.split('/')
-            data['xpost_subreddit'] = url_parts[4]
-            data['url'] = 'self.{0}'.format(url_parts[4])
-            if 'comments' in url_parts:
-                data['url_type'] = 'x-post submission'
-            else:
-                data['url_type'] = 'x-post subreddit'
+        # elif reddit_link.match(sub.url):  # Crossposts
+        #     # Strip the subreddit name from the permalink to avoid having
+        #     # submission.subreddit.url make a separate API call
+        #     url_parts = sub.url.split('/')
+        #     data['xpost_subreddit'] = url_parts[4]
+        #     data['url'] = 'self.{0}'.format(url_parts[4])
+        #     if 'comments' in url_parts:
+        #         data['url_type'] = 'x-post submission'
+        #     else:
+        #         data['url_type'] = 'x-post subreddit'
         else:
             data['url'] = sub.url
             data['url_type'] = 'external'
@@ -572,20 +568,21 @@ class SubredditContent(Content):
         self.max_title_rows = max_title_rows
         self.filter_nsfw = filter_nsfw
         self._loader = loader
-        self._submissions = submissions
         self._submission_data = []
+
+        self._iter = T.GroupIter(name)
 
         # Verify that content exists for the given submission generator.
         # This is necessary because PRAW loads submissions lazily, and
         # there is is no other way to check things like multireddits that
         # don't have a real corresponding subreddit object.
-        try:
-            self.get(0)
-        except IndexError:
-            full_name = self.name
-            if self.order:
-                full_name += '/' + self.order
-            raise exceptions.NoSubmissionsError(full_name)
+        # try:
+        self.get(0)
+        # except IndexError:
+        #     full_name = self.name
+        #     if self.order:
+        #         full_name += '/' + self.order
+        #     raise exceptions.NoSubmissionsError(full_name)
 
     @classmethod
     def from_name(cls, reddit, name, loader, order=None, query=None):
@@ -605,198 +602,14 @@ class SubredditContent(Content):
             query (text): Content to search for on the given subreddit or
                 user's page.
         """
-        # TODO: This desperately needs to be refactored
-
-        # Strip leading, trailing, and redundant backslashes
-        parts = [seg for seg in name.strip(' /').split('/') if seg]
-
-        # Check for the resource type, assume /r/ as the default
-        if len(parts) >= 3 and parts[2] == 'm':
-            # E.g. /u/civilization_phaze_3/m/multireddit ->
-            #    resource_root = "u/civilization_phaze_3/m"
-            #    parts = ["multireddit"]
-            resource_root, parts = '/'.join(parts[:3]), parts[3:]
-        elif len(parts) > 1 and parts[0] in ['r', 'u', 'user', 'domain']:
-            # E.g. /u/civilization_phaze_3 ->
-            #    resource_root = "u"
-            #    parts = ["civilization_phaze_3"]
-            #
-            # E.g. /r/python/top-week ->
-            #    resource_root = "r"
-            #    parts = ["python", "top-week"]
-            resource_root = parts.pop(0)
-        else:
-            resource_root = 'r'
-
-        if resource_root == 'user':
-            resource_root = 'u'
-        elif resource_root.startswith('user/'):
-            # Special check for multi-reddit resource roots
-            # E.g.
-            #     before: resource_root = "user/civilization_phaze_3/m"
-            #     After:  resource_root = "u/civilization_phaze_3/m"
-            resource_root = 'u' + resource_root[4:]
-
-        # The parts left should be in one of the following forms:
-        #    [resource]
-        #    [resource, order]
-        #    [resource, user_room, order]
-
-        user_rooms = ['overview', 'submitted', 'comments']
-        private_user_rooms = ['upvoted', 'downvoted', 'hidden', 'saved']
-        user_room = None
-
-        if len(parts) == 1:
-            # E.g. /r/python
-            #    parts = ["python"]
-            #    resource = "python"
-            #    resource_order = None
-            resource, resource_order = parts[0], None
-        elif resource_root == 'u' and len(parts) in [2, 3] \
-                and parts[1] in user_rooms + private_user_rooms:
-            # E.g. /u/spez/submitted/top ->
-            #    parts = ["spez", "submitted", "top"]
-            #    resource = "spez"
-            #    user_room = "submitted"
-            #    resource_order = "top"
-            resource, user_room = parts[:2]
-            resource_order = parts[2] if len(parts) == 3 else None
-        elif len(parts) == 2:
-            # E.g. /r/python/top
-            #    parts = ["python", "top"]
-            #    resource = "python
-            #    resource_order = "top"
-            resource, resource_order = parts
-        else:
-            raise InvalidSubreddit('`{}` is an invalid format'.format(name))
-
-        if not resource:
-            # Praw does not correctly handle empty strings
-            # https://github.com/praw-dev/praw/issues/615
-            raise InvalidSubreddit('Subreddit cannot be empty')
-
-        # If the order was explicitly passed in, it will take priority over
-        # the order that was extracted from the name
-        order = order or resource_order
-
-        display_order = order
-        display_name = '/'.join(['', resource_root, resource])
-        if user_room and resource_root == 'u':
-            display_name += '/' + user_room
-
-        # Split the order from the period E.g. controversial-all, top-hour
-        if order and '-' in order:
-            order, period = order.split('-', 1)
-        else:
-            period = None
-
-        if query:
-            # The allowed orders for sorting search results are different
-            orders = ['relevance', 'top', 'comments', 'new', None]
-            period_allowed = ['top', 'comments']
-        else:
-            orders = ['hot', 'top', 'rising', 'new', 'controversial', 'gilded', None]
-            period_allowed = ['top', 'controversial']
-
-        if order not in orders:
-            raise InvalidSubreddit('Invalid order `%s`' % order)
-        if period not in ['all', 'day', 'hour', 'month', 'week', 'year', None]:
-            raise InvalidSubreddit('Invalid period `%s`' % period)
-        if period and order not in period_allowed:
-            raise InvalidSubreddit(
-                '`%s` order does not allow sorting by period' % order)
-
-        # On some objects, praw doesn't allow you to pass arguments for the
-        # order and period. Instead you need to call special helper functions
-        # such as Multireddit.get_controversial_from_year(). Build the method
-        # name here for convenience.
-        if period:
-            method_alias = 'get_{0}_from_{1}'.format(order, period)
-        elif order:
-            method_alias = 'get_{0}'.format(order)
-        else:
-            method_alias = 'get_hot'
-
-        # Here's where we start to build the submission generators
-        if query:
-            if resource_root == 'u':
-                search = '/r/{subreddit}/search'
-                author = reddit.user.name if resource == 'me' else resource
-                query = 'author:{0} {1}'.format(author, query)
-                subreddit = None
-            else:
-                search = resource_root + '/{subreddit}/search'
-                subreddit = None if resource == 'front' else resource
-
-            reddit.config.API_PATHS['search'] = search
-            submissions = reddit.search(query, subreddit=subreddit,
-                                        sort=order, period=period)
-
-        elif resource_root == 'domain':
-            order = order or 'hot'
-            submissions = reddit.get_domain_listing(
-                resource, sort=order, period=period, limit=None)
-
-        elif resource_root.endswith('/m'):
-            redditor = resource_root.split('/')[1]
-
-            if redditor == 'me':
-                if not reddit.is_oauth_session():
-                    raise exceptions.AccountError('Not logged in')
-                else:
-                    redditor = reddit.user.name
-                    display_name = display_name.replace(
-                        '/me/', '/{0}/'.format(redditor))
-
-            multireddit = reddit.get_multireddit(redditor, resource)
-            submissions = getattr(multireddit, method_alias)(limit=None)
-
-        elif resource_root == 'u' and resource == 'me':
-            if not reddit.is_oauth_session():
-                raise exceptions.AccountError('Not logged in')
-            else:
-                user_room = user_room or 'overview'
-                order = order or 'new'
-                period = period or 'all'
-                method = getattr(reddit.user, 'get_%s' % user_room)
-                submissions = method(sort=order, time=period, limit=None)
-
-        elif resource_root == 'u':
-            user_room = user_room or 'overview'
-            if user_room not in user_rooms:
-                # Tried to access a private room like "u/me/hidden" for a
-                # different redditor
-                raise InvalidSubreddit('Unavailable Resource')
-            order = order or 'new'
-            period = period or 'all'
-            redditor = reddit.get_redditor(resource)
-            method = getattr(redditor, 'get_%s' % user_room)
-            submissions = method(sort=order, time=period, limit=None)
-
-        elif resource == 'front':
-            if order in (None, 'hot'):
-                submissions = reddit.get_front_page(limit=None)
-            elif period:
-                # For the front page, praw makes you send the period as `t`
-                # instead of calling reddit.get_hot_from_week()
-                method_alias = 'get_{0}'.format(order)
-                method = getattr(reddit, method_alias)
-                submissions = method(limit=None, params={'t': period})
-            else:
-                submissions = getattr(reddit, method_alias)(limit=None)
-
-        else:
-            subreddit = reddit.get_subreddit(resource)
-            submissions = getattr(subreddit, method_alias)(limit=None)
-
-            # For special subreddits like /r/random we want to replace the
-            # display name with the one returned by the request.
-            display_name = '/r/{0}'.format(subreddit.display_name)
 
         filter_nsfw = (reddit.user and reddit.user.over_18 is False)
 
+        display_name  = name
+        display_order = order
+
         # We made it!
-        return cls(display_name, submissions, loader, order=display_order,
+        return cls(display_name, None, loader, order=display_order,
                    query=query, filter_nsfw=filter_nsfw)
 
     @property
@@ -815,34 +628,20 @@ class SubredditContent(Content):
         if index < 0:
             raise IndexError
 
-        nsfw_count = 0
         while index >= len(self._submission_data):
             try:
                 with self._loader('Loading more submissions'):
-                    submission = next(self._submissions)
+                    submission = next(self._iter)   # Will be a T.PostItem
                 if self._loader.exception:
                     raise IndexError
             except StopIteration:
                 raise IndexError
             else:
 
-                # Skip NSFW posts based on the reddit user's profile settings.
-                # If we see 20+ NSFW posts at the beginning, assume the subreddit
-                # only has NSFW content and abort. This allows us to avoid making
-                # an additional API call to check if a subreddit is over18 (which
-                # doesn't work for things like multireddits anyway)
-                if self.filter_nsfw and submission.over_18:
-                    nsfw_count += 1
-                    if not self._submission_data and nsfw_count >= 20:
-                        raise exceptions.SubredditError(
-                            'You must be over 18+ to view this subreddit')
-                    continue
-                else:
-                    nsfw_count = 0
-
                 if hasattr(submission, 'title'):
                     data = self.strip_praw_submission(submission)
                 else:
+                    assert False # TODO: Need to implement this for Tildes    
                     # when submission is a saved comment
                     data = self.strip_praw_comment(submission)
 

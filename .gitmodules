@@ -1,0 +1,3 @@
+[submodule "rtv/tildes"]
+	path = rtv/tildes
+	url = https://github.com/albert-tomanek/tildes-scraper.git

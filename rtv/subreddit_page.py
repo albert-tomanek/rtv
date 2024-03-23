@@ -317,7 +317,7 @@ class SubredditPage(Page):
             self.term.add_space(win)
 
             attr = self.term.attr('SubmissionSubreddit')
-            self.term.add_line(win, '/r/{subreddit}'.format(**data), attr=attr)
+            self.term.add_line(win, '~{subreddit}'.format(**data), attr=attr)
 
             if data['flair']:
                 attr = self.term.attr('SubmissionFlair')
