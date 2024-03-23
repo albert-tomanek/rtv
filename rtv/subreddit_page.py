@@ -73,52 +73,28 @@ class SubredditPage(Page):
             self.nav = Navigator(self.content.get)
 
     @SubredditController.register(Command('SORT_1'))
-    def sort_content_hot(self):
-        if self.content.query:
-            self.refresh_content(order='relevance')
-        else:
-            self.refresh_content(order='hot')
+    def sort_content_activity(self):
+        self.refresh_content(order=('activity', None))
 
     @SubredditController.register(Command('SORT_2'))
-    def sort_content_top(self):
-        order = self._prompt_period('top')
+    def sort_content_votes(self):
+        order = self._prompt_period('votes')
         if order is None:
             self.term.show_notification('Invalid option')
         else:
             self.refresh_content(order=order)
 
     @SubredditController.register(Command('SORT_3'))
-    def sort_content_rising(self):
-        if self.content.query:
-            order = self._prompt_period('comments')
-            if order is None:
-                self.term.show_notification('Invalid option')
-            else:
-                self.refresh_content(order=order)
+    def sort_content_comments(self):
+        order = self._prompt_period('comments')
+        if order is None:
+            self.term.show_notification('Invalid option')
         else:
-            self.refresh_content(order='rising')
+            self.refresh_content(order=order)
 
     @SubredditController.register(Command('SORT_4'))
     def sort_content_new(self):
-        self.refresh_content(order='new')
-
-    @SubredditController.register(Command('SORT_5'))
-    def sort_content_controversial(self):
-        if self.content.query:
-            self.term.flash()
-        else:
-            order = self._prompt_period('controversial')
-            if order is None:
-                self.term.show_notification('Invalid option')
-            else:
-                self.refresh_content(order=order)
-
-    @SubredditController.register(Command('SORT_6'))
-    def sort_content_gilded(self):
-        if self.content.query:
-            self.term.flash()
-        else:
-            self.refresh_content(order='gilded')
+        self.refresh_content(order=('new', None))
 
     @SubredditController.register(Command('SUBREDDIT_SEARCH'))
     def search_subreddit(self, name=None):

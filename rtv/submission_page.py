@@ -70,24 +70,20 @@ class SubmissionPage(Page):
             self.nav = Navigator(self.content.get, page_index=-1)
 
     @SubmissionController.register(Command('SORT_1'))
-    def sort_content_hot(self):
-        self.refresh_content(order='hot')
+    def sort_content_votes(self):
+        self.refresh_content(order='votes')
 
     @SubmissionController.register(Command('SORT_2'))
-    def sort_content_top(self):
-        self.refresh_content(order='top')
+    def sort_content_relevance(self):
+        self.refresh_content(order='relevance')
 
     @SubmissionController.register(Command('SORT_3'))
-    def sort_content_rising(self):
-        self.refresh_content(order='rising')
+    def sort_content_newest(self):
+        self.refresh_content(order='newest')
 
     @SubmissionController.register(Command('SORT_4'))
-    def sort_content_new(self):
-        self.refresh_content(order='new')
-
-    @SubmissionController.register(Command('SORT_5'))
-    def sort_content_controversial(self):
-        self.refresh_content(order='controversial')
+    def sort_content_chrono(self):
+        self.refresh_content(order='posted')
 
     @SubmissionController.register(Command('SUBMISSION_TOGGLE_COMMENT'))
     def toggle_comment(self):
@@ -267,7 +263,7 @@ class SubmissionPage(Page):
         if row in valid_rows:
             if data['is_author']:
                 attr = self.term.attr('CommentAuthorSelf')
-                text = '{author} [S]'.format(**data)
+                text = '{author} [OP]'.format(**data)
             else:
                 attr = self.term.attr('CommentAuthor')
                 text = '{author}'.format(**data)

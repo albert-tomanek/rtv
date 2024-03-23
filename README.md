@@ -6,6 +6,9 @@ Do not attempt to:
  * Open reddit/tildes links
  * View users
 
+Your attempts to do the following will be futile:
+ * Vote
+
 ---
 
 - [RTV Development is Shutting Down](https://github.com/michael-lazar/rtv/issues/696)

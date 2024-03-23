@@ -763,7 +763,7 @@ class Page(object):
         text = spacing.join(items)
         self.term.add_line(window, text, 0, 0)
         if self.content.order is not None:
-            order = self.content.order.split('-')[0]
+            order = self.content.order[0]
             col = text.find(order) - 3
             attr = self.term.attr('OrderBarHighlight')
             window.chgat(0, col, 3, attr)
@@ -870,17 +870,21 @@ class Page(object):
         if not valid:
             self.term.flash()
 
-    def _prompt_period(self, order):
+    def _prompt_period(self, order: str) -> (str, str):
         choices = {
             '\n': order,
-            '1': '{0}-hour'.format(order),
-            '2': '{0}-day'.format(order),
-            '3': '{0}-week'.format(order),
-            '4': '{0}-month'.format(order),
-            '5': '{0}-year'.format(order),
-            '6': '{0}-all'.format(order)}
+            '1': '1h',
+            '2': '12h',
+            '3': '24h',
+            '4': '3d',
+            '5': '7d',
+            '6': 'all'}
 
         message = docs.TIME_ORDER_MENU.strip().splitlines()
         ch = self.term.show_notification(message)
         ch = six.unichr(ch)
-        return choices.get(ch)
+
+        try:
+            return (order, choices[ch])
+        except KeyError:
+            return None

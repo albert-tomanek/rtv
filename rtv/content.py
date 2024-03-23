@@ -85,41 +85,20 @@ class Content(object):
 
         """
 
-        stack = comments[:]
-        for item in stack:
-            item.nested_level = root_level
+        # .parent_id
+        # .id
+        # .nested_level
 
-        retval, parent_candidates = [], {}
-        while stack:
-            item = stack.pop(0)
+        ret = []
+        def add_comments(cs, depth, parent_id):
+            for c in cs:
+                c.nested_level = depth
+                c.parent_id = parent_id
+                ret.append(c)
+                add_comments(c.replies, depth + 1, c.id)
 
-            # The MoreComments item count should never be zero, discard it if
-            # it is. Need to look into this further.
-            if isinstance(item, praw.objects.MoreComments) and item.count == 0:
-                continue
-
-            if item.parent_id:
-                # Search the list of previous comments for a possible parent
-                # The match is based off of the parent_id parameter E.g.
-                #   parent.id = c0tprcm
-                #   child.parent_id = t1_c0tprcm
-                parent = parent_candidates.get(item.parent_id[3:])
-                if parent:
-                    item.nested_level = parent.nested_level + 1
-
-            # Add all of the attached replies to the front of the stack to be
-            # parsed separately
-            if hasattr(item, 'replies'):
-                for n in item.replies:
-                    n.nested_level = item.nested_level + 1
-                stack[0:0] = item.replies
-
-            # The comment is now a potential parent for the items that are
-            # remaining on the stack.
-            parent_candidates[item.id] = item
-
-            retval.append(item)
-        return retval
+        add_comments(comments, root_level, None)
+        return ret
 
     @classmethod
     def strip_praw_comment(cls, comment: T.Comment):
@@ -512,7 +491,7 @@ class SubmissionContent(Content):
         except Exception as e:
             raise SubmissionError
 
-        submission = T.Post(group, id) #comment_sort=order)
+        submission = T.Post(group, id, comment_order=order)
         return cls(submission, loader, indent_size, max_indent_level, order,
                    max_comment_cols)
 
@@ -618,22 +597,22 @@ class SubredditContent(Content):
         self._loader = loader
         self._submission_data = []
 
-        self._iter = T.GroupIter(name)
+        self._iter = T.GroupIter(name, order=order)
 
         # Verify that content exists for the given submission generator.
         # This is necessary because PRAW loads submissions lazily, and
         # there is is no other way to check things like multireddits that
         # don't have a real corresponding subreddit object.
-        # try:
-        self.get(0)
-        # except IndexError:
-        #     full_name = self.name
-        #     if self.order:
-        #         full_name += '/' + self.order
-        #     raise exceptions.NoSubmissionsError(full_name)
+        try:
+            self.get(0)
+        except IndexError:
+            full_name = self.name
+            if self.order:
+                full_name += '?order={}&period={}'.format(*self.order)
+            raise exceptions.NoSubmissionsError(full_name)
 
     @classmethod
-    def from_name(cls, reddit, name, loader, order=None, query=None):
+    def from_name(cls, reddit, name, loader, order=('activity', None), query=None):
         """
         Params:
             reddit (praw.Reddit): Instance of the reddit api.

@@ -116,11 +116,11 @@ https://github.com/michael-lazar/rtv
 """
 
 BANNER_SUBREDDIT = """
-[1]hot [2]top [3]rising [4]new [5]controversial [6]gilded
+[1]activity [2]votes [3]comments [4]new
 """
 
 BANNER_SUBMISSION = """
-[1]hot [2]top [3]rising [4]new [5]controversial
+[1]votes [2]relevance [3]new [4]chronological
 """
 
 BANNER_SEARCH = """
@@ -221,9 +221,9 @@ OAUTH_SUCCESS = """\
 TIME_ORDER_MENU = """
 Links from:
   [1] Past hour
-  [2] Past 24 hours
-  [3] Past week
-  [4] Past month
-  [5] Past year
+  [2] Past 12 hours
+  [3] Past 24 hours
+  [4] Past 3 days
+  [5] Past 7 days
   [6] All time
 """
